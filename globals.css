@@ -1,0 +1,306 @@
+-- ============================================================
+-- Brian Muthui Portfolio - Full Database Schema Recreation
+-- Run this in Supabase SQL Editor (Dashboard > SQL Editor > New Query)
+-- ============================================================
+
+-- 1. Drop existing tables (cascade removes dependencies)
+DROP TABLE IF EXISTS public.contact_messages CASCADE;
+DROP TABLE IF EXISTS public.skills CASCADE;
+DROP TABLE IF EXISTS public.projects CASCADE;
+DROP TABLE IF EXISTS public.experience CASCADE;
+DROP TABLE IF EXISTS public.profiles CASCADE;
+
+-- Drop existing trigger and function
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
+
+-- ============================================================
+-- 2. CREATE TABLES
+-- ============================================================
+
+-- PROFILES TABLE
+CREATE TABLE public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT 'User',
+  title TEXT DEFAULT 'Mechanical Engineer',
+  email TEXT NOT NULL DEFAULT '',
+  phone TEXT,
+  whatsapp TEXT,
+  location TEXT,
+  about_text TEXT,
+  github_url TEXT,
+  linkedin_url TEXT,
+  twitter_url TEXT,
+  website_url TEXT,
+  profile_images JSONB DEFAULT '[]'::jsonb,
+  resume_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- EXPERIENCE TABLE
+CREATE TABLE public.experience (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  position TEXT NOT NULL,
+  company TEXT NOT NULL,
+  duration TEXT NOT NULL,
+  description TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- PROJECTS TABLE
+CREATE TABLE public.projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  image_url TEXT,
+  technologies TEXT[] DEFAULT '{}',
+  project_url TEXT,
+  github_url TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- SKILLS TABLE
+CREATE TABLE public.skills (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  skill_list TEXT[] DEFAULT '{}',
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- CONTACT MESSAGES TABLE
+CREATE TABLE public.contact_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT DEFAULT 'new' CHECK (status IN ('new', 'read', 'archived')),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================================
+-- 3. CREATE INDEXES
+-- ============================================================
+
+CREATE INDEX idx_experience_user_id ON public.experience(user_id);
+CREATE INDEX idx_experience_sort ON public.experience(user_id, sort_order);
+CREATE INDEX idx_projects_user_id ON public.projects(user_id);
+CREATE INDEX idx_projects_sort ON public.projects(user_id, sort_order);
+CREATE INDEX idx_skills_user_id ON public.skills(user_id);
+CREATE INDEX idx_skills_sort ON public.skills(user_id, sort_order);
+CREATE INDEX idx_contact_messages_created ON public.contact_messages(created_at DESC);
+CREATE INDEX idx_contact_messages_status ON public.contact_messages(status);
+
+-- ============================================================
+-- 4. ENABLE ROW LEVEL SECURITY
+-- ============================================================
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.experience ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.skills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.contact_messages ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- 5. RLS POLICIES - PROFILES
+-- ============================================================
+
+-- Owner can do everything with their profile
+CREATE POLICY "profiles_select_own" ON public.profiles
+  FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "profiles_insert_own" ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "profiles_update_own" ON public.profiles
+  FOR UPDATE USING (auth.uid() = id);
+
+CREATE POLICY "profiles_delete_own" ON public.profiles
+  FOR DELETE USING (auth.uid() = id);
+
+-- Public can view any profile (for the portfolio page)
+CREATE POLICY "profiles_public_read" ON public.profiles
+  FOR SELECT USING (true);
+
+-- ============================================================
+-- 6. RLS POLICIES - EXPERIENCE
+-- ============================================================
+
+CREATE POLICY "experience_select_own" ON public.experience
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "experience_insert_own" ON public.experience
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "experience_update_own" ON public.experience
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "experience_delete_own" ON public.experience
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Public can view experience entries
+CREATE POLICY "experience_public_read" ON public.experience
+  FOR SELECT USING (true);
+
+-- ============================================================
+-- 7. RLS POLICIES - PROJECTS
+-- ============================================================
+
+CREATE POLICY "projects_select_own" ON public.projects
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "projects_insert_own" ON public.projects
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "projects_update_own" ON public.projects
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "projects_delete_own" ON public.projects
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Public can view projects
+CREATE POLICY "projects_public_read" ON public.projects
+  FOR SELECT USING (true);
+
+-- ============================================================
+-- 8. RLS POLICIES - SKILLS
+-- ============================================================
+
+CREATE POLICY "skills_select_own" ON public.skills
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "skills_insert_own" ON public.skills
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "skills_update_own" ON public.skills
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "skills_delete_own" ON public.skills
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- Public can view skills
+CREATE POLICY "skills_public_read" ON public.skills
+  FOR SELECT USING (true);
+
+-- ============================================================
+-- 9. RLS POLICIES - CONTACT MESSAGES
+-- ============================================================
+
+-- Anyone can submit a contact message
+CREATE POLICY "contact_messages_insert_public" ON public.contact_messages
+  FOR INSERT WITH CHECK (true);
+
+-- Authenticated users can read messages
+CREATE POLICY "contact_messages_select_auth" ON public.contact_messages
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+-- Authenticated users can update message status
+CREATE POLICY "contact_messages_update_auth" ON public.contact_messages
+  FOR UPDATE USING (auth.role() = 'authenticated');
+
+-- Authenticated users can delete messages
+CREATE POLICY "contact_messages_delete_auth" ON public.contact_messages
+  FOR DELETE USING (auth.role() = 'authenticated');
+
+-- ============================================================
+-- 10. AUTO-CREATE PROFILE ON SIGNUP
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, name, email, title)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data ->> 'name', split_part(NEW.email, '@', 1)),
+    NEW.email,
+    'Mechanical Engineer'
+  )
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================================
+-- 11. AUTO-UPDATE updated_at TIMESTAMP
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.update_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER profiles_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+CREATE TRIGGER experience_updated_at
+  BEFORE UPDATE ON public.experience
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+CREATE TRIGGER projects_updated_at
+  BEFORE UPDATE ON public.projects
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+CREATE TRIGGER skills_updated_at
+  BEFORE UPDATE ON public.skills
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- ============================================================
+-- 12. STORAGE BUCKET FOR PORTFOLIO ASSETS
+-- ============================================================
+
+-- Create a storage bucket for portfolio images and resume files
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('portfolio-assets', 'portfolio-assets', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow authenticated users to upload files
+CREATE POLICY "portfolio_assets_upload" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'portfolio-assets'
+    AND auth.role() = 'authenticated'
+  );
+
+-- Allow authenticated users to update their files
+CREATE POLICY "portfolio_assets_update" ON storage.objects
+  FOR UPDATE USING (
+    bucket_id = 'portfolio-assets'
+    AND auth.role() = 'authenticated'
+  );
+
+-- Allow authenticated users to delete their files
+CREATE POLICY "portfolio_assets_delete" ON storage.objects
+  FOR DELETE USING (
+    bucket_id = 'portfolio-assets'
+    AND auth.role() = 'authenticated'
+  );
+
+-- Allow public access to read portfolio assets
+CREATE POLICY "portfolio_assets_public_read" ON storage.objects
+  FOR SELECT USING (bucket_id = 'portfolio-assets');
